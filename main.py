@@ -273,7 +273,7 @@ def main():
             app_instance = app
 
             # Load threads from backup
-            await load_threads_from_group()
+            await load_threads_from_group(app.bot)
             
             # Add handlers
             app.add_handler(CommandHandler("start", start))
