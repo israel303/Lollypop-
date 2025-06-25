@@ -272,6 +272,9 @@ def main():
             app = Application.builder().token(TOKEN).build()
             app_instance = app
 
+            # Initialize the application
+            await app.initialize()
+
             # Load threads from backup
             await load_threads_from_group(app.bot)
             
