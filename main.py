@@ -68,7 +68,7 @@ async def load_threads_from_group(bot):
             logging.warning(f"Could not load from updates: {e}")
             user_threads.clear()
             
-        await bot.set_webhook(WEBHOOK_URL + "/webhook")
+        await bot.set_webhook(url=WEBHOOK_URL)
         logging.info("Webhook set after loading updates")
             
     except Exception as e:
@@ -287,24 +287,17 @@ def main():
             asyncio.create_task(periodic_backup())
 
             await app.bot.delete_webhook(drop_pending_updates=True)
-            await app.bot.set_webhook(url=WEBHOOK_URL + "/webhook")
+            await app.bot.set_webhook(url=WEBHOOK_URL)
             
-            logger.info(f"Starting webhook: {WEBHOOK_URL}/webhook")
+            logger.info(f"Starting webhook: {WEBHOOK_URL}")
             logger.info(f"Listening on port: {PORT}")
             
-            from aiohttp import web
-            webhook_app = web.Application()
-            webhook_app.router.add_post('/webhook', app.webhook_handler)
-            runner = web.AppRunner(webhook_app)
-            await runner.setup()
-            site = web.TCPSite(runner, '0.0.0.0', PORT)
-            await site.start()
-            
-            try:
-                while True:
-                    await asyncio.sleep(3600)  # Keep running
-            except KeyboardInterrupt:
-                await runner.cleanup()
+            await app.run_webhook(
+                listen="0.0.0.0",
+                port=PORT,
+                url_path="",
+                webhook_url=WEBHOOK_URL
+            )
             
         except Exception as e:
             logger.error(f"Failed to start application: {e}")
