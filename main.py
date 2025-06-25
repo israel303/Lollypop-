@@ -10,7 +10,6 @@ from telegram.ext import (
     MessageHandler,
     ContextTypes,
     filters,
-    DefaultRateLimiter,
 )
 
 # Validate environment variables
@@ -35,15 +34,13 @@ backup_message_id = None
 app_instance = None
 
 async def load_threads_from_group(bot):
-    """Load threads data from a JSON file attached to a message in the group"""
+    """Load threads data from a JSON file in the group"""
     global user_threads, backup_message_id
     
     try:
-        # Delete existing webhook to allow getUpdates
         await bot.delete_webhook(drop_pending_updates=True)
-        logging.info("Deleted existing webhook to allow getUpdates")
+        logging.info("Deleted webhook to allow getUpdates")
 
-        # Search for backup messages in general topic (message_thread_id = 1)
         try:
             updates = await bot.get_updates(limit=50)
             backup_found = False
@@ -58,28 +55,28 @@ async def load_threads_from_group(bot):
                     backup_message_id = update.message.message_id
                     file = await bot.get_file(update.message.document.file_id)
                     file_content = await file.download_as_bytearray()
-                    user_threads = json.loads(file_content.decode('utf-8'))
+                    user_threads.update(json.loads(file_content.decode('utf-8')))
                     logging.info(f"Loaded {len(user_threads)} threads from backup")
                     backup_found = True
                     break
             
             if not backup_found:
-                logging.info("No backup file found in recent updates, starting fresh")
-                user_threads = {}
+                logging.info("No backup file found, starting fresh")
+                user_threads.clear()
                 
-        except Exception as inner_e:
-            logging.warning(f"Could not load from updates: {inner_e}")
-            user_threads = {}
+        except Exception as e:
+            logging.warning(f"Could not load from updates: {e}")
+            user_threads.clear()
             
         await bot.set_webhook(url=WEBHOOK_URL + "/webhook")
-        logging.info("Webhook re-set after loading updates")
+        logging.info("Webhook set after loading updates")
             
     except Exception as e:
         logging.error(f"Failed to load threads backup: {e}")
-        user_threads = {}
+        user_threads.clear()
 
 async def save_threads_to_group():
-    """Save user_threads as a JSON file attached to a message in the group"""
+    """Save user_threads as a JSON file in the group"""
     global backup_message_id
     
     try:
@@ -91,7 +88,7 @@ async def save_threads_to_group():
             chat_id=GROUP_ID,
             document=file_data,
             caption="🔄 BACKUP_THREADS: User threads backup",
-            message_thread=1
+            message_thread_id=1
         )
         
         old_backup_message_id = backup_message_id
@@ -110,7 +107,6 @@ async def save_threads_to_group():
                 
     except Exception as e:
         logging.error(f"Failed to save threads backup: {e}")
-        user_threads = {}
 
 async def open_thread_for_user(app: Application, user) -> int:
     """Create a new thread for user in the admin group"""
@@ -253,7 +249,7 @@ async def periodic_backup():
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     """Handle errors"""
-    logging.error(f"Exception while handling an update: {context.error}")
+    logging.error(f"Update caused error: {context.error}")
 
 def main():
     """Main function to run the bot"""
@@ -267,7 +263,7 @@ def main():
     
     async def run_bot():
         try:
-            app = Application.builder().token(TOKEN).rate_limiter(DefaultRateLimiter()).build()
+            app = Application.builder().token(TOKEN).build()
             app_instance = app
 
             await app.initialize()
@@ -290,16 +286,16 @@ def main():
             asyncio.create_task(periodic_backup())
 
             await app.bot.delete_webhook(drop_pending_updates=True)
-            await app.bot.setWebhook(url=WEBHOOK_URL + "/webhook")
+            await app.bot.set_webhook(url=WEBHOOK_URL + "/webhook")
             
             logger.info(f"Starting webhook: {WEBHOOK_URL}/webhook")
             logger.info(f"Listening on port: {PORT}")
             
-            await app.run_webhooks(
+            await app.run_webhook(
                 listen="0.0.0.0",
                 port=PORT,
-                webhook_url=WEBHOOK_URL + "/webhook",
-                drop_pending_updates=True
+                url_path="/webhook",
+                webhook_url=WEBHOOK_URL + "/webhook"
             )
             
         except Exception as e:
