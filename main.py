@@ -10,7 +10,6 @@ from telegram.ext import (
     MessageHandler,
     ContextTypes,
     filters,
-    RateLimiter,
 )
 
 # Validate environment variables
@@ -266,7 +265,7 @@ def main():
     
     async def run_bot():
         try:
-            app = Application.builder().token(TOKEN).rate_limiter(RateLimiter()).build()
+            app = Application.builder().token(TOKEN).rate_limiter(True).build()
             app_instance = app
 
             await app.initialize()
