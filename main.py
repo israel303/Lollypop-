@@ -68,7 +68,7 @@ async def load_threads_from_group(bot):
             logging.warning(f"Could not load from updates: {e}")
             user_threads.clear()
             
-        await bot.set_webhook(url=WEBHOOK_URL + "/webhook")
+        await bot.set_webhook(WEBHOOK_URL + "/webhook")
         logging.info("Webhook set after loading updates")
             
     except Exception as e:
@@ -237,7 +237,7 @@ async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Manual backup command for admins"""
     if update.effective_chat.id == GROUP_ID:
         await save_threads_to_group()
-        await update.message.reply_text("✅ הגיבוי נשמר בהצלחה!")
+        await update.message.reply_text("✅ הגיבוי נשמר!")
 
 async def periodic_backup():
     """Backup threads every 30 minutes"""
@@ -267,6 +267,7 @@ def main():
             app_instance = app
 
             await app.initialize()
+            await app.start()
 
             await load_threads_from_group(app.bot)
 
@@ -291,16 +292,27 @@ def main():
             logger.info(f"Starting webhook: {WEBHOOK_URL}/webhook")
             logger.info(f"Listening on port: {PORT}")
             
-            await app.run_webhook(
-                listen="0.0.0.0",
-                port=PORT,
-                url_path="/webhook",
-                webhook_url=WEBHOOK_URL + "/webhook"
-            )
+            from aiohttp import web
+            webhook_app = web.Application()
+            webhook_app.router.add_post('/webhook', app.webhook_handler)
+            runner = web.AppRunner(webhook_app)
+            await runner.setup()
+            site = web.TCPSite(runner, '0.0.0.0', PORT)
+            await site.start()
+            
+            try:
+                while True:
+                    await asyncio.sleep(3600)  # Keep running
+            except KeyboardInterrupt:
+                await runner.cleanup()
             
         except Exception as e:
             logger.error(f"Failed to start application: {e}")
             raise
+        finally:
+            if app.updater is not None:
+                await app.stop()
+                await app.shutdown()
             
     asyncio.run(run_bot())
 
