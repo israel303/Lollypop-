@@ -2,6 +2,7 @@ import os
 import logging
 import json
 import asyncio
+from io import BytesIO
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -33,7 +34,7 @@ backup_message_id = None
 app_instance = None
 
 async def load_threads_from_group(bot):
-    """Load threads data from backup message in group"""
+    """Load threads data from a JSON file attached to a message in the group"""
     global user_threads, backup_message_id
     
     try:
@@ -50,20 +51,20 @@ async def load_threads_from_group(bot):
                 if (hasattr(update, 'message') and update.message and
                     update.message.chat.id == GROUP_ID and
                     update.message.message_thread_id == 1 and
-                    update.message.text and
-                    update.message.text.startswith("🔄 BACKUP_THREADS:")):
+                    update.message.document and
+                    update.message.document.file_name == "threads_backup.json"):
                     
                     backup_message_id = update.message.message_id
-                    json_text = update.message.text.replace("🔄 BACKUP_THREADS:", "").strip()
-                    
-                    if json_text:
-                        user_threads = json.loads(json_text)
-                        logging.info(f"Loaded {len(user_threads)} threads from backup")
-                        backup_found = True
-                        break
+                    # Download the JSON file
+                    file = await bot.get_file(update.message.document.file_id)
+                    file_content = await file.download_as_bytearray()
+                    user_threads = json.loads(file_content.decode('utf-8'))
+                    logging.info(f"Loaded {len(user_threads)} threads from backup")
+                    backup_found = True
+                    break
             
             if not backup_found:
-                logging.info("No backup found in recent updates, starting fresh")
+                logging.info("No backup file found in recent updates, starting fresh")
                 user_threads = {}
                 
         except Exception as inner_e:
@@ -79,37 +80,46 @@ async def load_threads_from_group(bot):
         user_threads = {}
 
 async def save_threads_to_group():
-    """Save threads data as message in group"""
+    """Save threads data as a JSON file attached to a message in the group"""
     global backup_message_id
     
     try:
+        # Convert user_threads to JSON and prepare as a file
         json_text = json.dumps(user_threads, ensure_ascii=False, indent=2)
-        backup_text = f"🔄 BACKUP_THREADS:\n{json_text}"
+        file_data = BytesIO(json_text.encode('utf-8'))
+        file_data.name = "threads_backup.json"
         
         if backup_message_id:
-            # Update existing message
+            # Update existing message by sending a new one and deleting the old
             try:
-                await app_instance.bot.edit_message_text(
+                msg = await app_instance.bot.send_document(
                     chat_id=GROUP_ID,
-                    message_id=backup_message_id,
-                    text=backup_text,
+                    document=file_data,
+                    caption="🔄 BACKUP_THREADS: User threads backup",
                     message_thread_id=1  # General topic
                 )
-                logging.info("Updated threads backup")
+                # Delete old backup message
+                await app_instance.bot.delete_message(
+                    chat_id=GROUP_ID,
+                    message_id=backup_message_id
+                )
+                backup_message_id = msg.message_id
+                logging.info("Updated threads backup with new file")
             except Exception as e:
-                logging.warning(f"Failed to edit backup message: {e}")
-                # If edit fails, create new message
+                logging.warning(f"Failed to update backup message: {e}")
+                # If update fails, create new message
                 backup_message_id = None
         
         if not backup_message_id:
             # Create new backup message
-            msg = await app_instance.bot.send_message(
+            msg = await app_instance.bot.send_document(
                 chat_id=GROUP_ID,
-                text=backup_text,
+                document=file_data,
+                caption="🔄 BACKUP_THREADS: User threads backup",
                 message_thread_id=1  # General topic
             )
             backup_message_id = msg.message_id
-            logging.info("Created new threads backup")
+            logging.info("Created new threads backup with file")
             
     except Exception as e:
         logging.error(f"Failed to save threads backup: {e}")
@@ -214,7 +224,7 @@ async def handle_group_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
     
     # Ignore backup messages
-    if update.message.text and update.message.text.startswith("🔄 BACKUP_THREADS:"):
+    if update.message.document and update.message.document.file_name == "threads_backup.json":
         return
 
     thread_id = update.message.message_thread_id
