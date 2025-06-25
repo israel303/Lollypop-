@@ -307,7 +307,7 @@ def main():
             await app.updater.start_webhook(
                 listen="0.0.0.0",
                 port=PORT,
-                webhook_path="/webhook"
+                webhook_url=WEBHOOK_URL + "/webhook"
             )
             
             # Keep the bot running
