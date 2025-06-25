@@ -10,6 +10,7 @@ from telegram.ext import (
     MessageHandler,
     ContextTypes,
     filters,
+    DefaultRateLimiter,
 )
 
 # Validate environment variables
@@ -78,7 +79,7 @@ async def load_threads_from_group(bot):
         user_threads = {}
 
 async def save_threads_to_group():
-    """Save threads data as a JSON file attached to a message in the group"""
+    """Save user_threads as a JSON file attached to a message in the group"""
     global backup_message_id
     
     try:
@@ -90,12 +91,12 @@ async def save_threads_to_group():
             chat_id=GROUP_ID,
             document=file_data,
             caption="🔄 BACKUP_THREADS: User threads backup",
-            message_thread_id=1
+            message_thread=1
         )
         
         old_backup_message_id = backup_message_id
         backup_message_id = new_msg.message_id
-        logging.info("Created new threads backup with file")
+        logging.info("Created new backup message")
         
         if old_backup_message_id:
             try:
@@ -109,6 +110,7 @@ async def save_threads_to_group():
                 
     except Exception as e:
         logging.error(f"Failed to save threads backup: {e}")
+        user_threads = {}
 
 async def open_thread_for_user(app: Application, user) -> int:
     """Create a new thread for user in the admin group"""
@@ -265,7 +267,7 @@ def main():
     
     async def run_bot():
         try:
-            app = Application.builder().token(TOKEN).rate_limiter(True).build()
+            app = Application.builder().token(TOKEN).rate_limiter(DefaultRateLimiter()).build()
             app_instance = app
 
             await app.initialize()
