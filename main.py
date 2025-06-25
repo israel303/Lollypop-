@@ -11,7 +11,6 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from telegram.ext.filters import RateLimiter
 
 # Validate environment variables
 TOKEN = os.getenv("BOT_TOKEN")
@@ -205,7 +204,7 @@ async def forward_to_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_group_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle replies from admin group and forward to users"""
-    if not update.message or not update.message.is_topic_message:
+    if not update.message or not update.message.is_topic:
         return
     
     if update.message.document and update.message.document.file_name == "threads_backup.json":
@@ -215,7 +214,7 @@ async def handle_group_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     target_user_id = None
     for uid, tid in user_threads.items():
-        if tid == thread_id:
+        if tid == update.message.message_thread_id:
             target_user_id = uid
             break
     
