@@ -9,7 +9,8 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     ContextTypes,
-    filters
+    filters,
+    RateLimiter
 )
 
 # Validate environment variables
@@ -44,7 +45,7 @@ async def load_threads_from_group(bot):
 
         # Search for backup messages in general topic (message_thread_id = 1)
         try:
-            updates = await bot.get_updates(limit=100)
+            updates = await bot.get_updates(limit=50)  # Reduced limit to avoid flooding
             backup_found = False
             
             for update in reversed(updates):  # Check from oldest to newest
@@ -89,38 +90,29 @@ async def save_threads_to_group():
         file_data = BytesIO(json_text.encode('utf-8'))
         file_data.name = "threads_backup.json"
         
-        if backup_message_id:
-            # Update existing message by sending a new one and deleting the old
+        # Send new backup message
+        new_msg = await app_instance.bot.send_document(
+            chat_id=GROUP_ID,
+            document=file_data,
+            caption="🔄 BACKUP_THREADS: User threads backup",
+            message_thread_id=1  # General topic
+        )
+        
+        # Update backup_message_id and delete old message if exists
+        old_backup_message_id = backup_message_id
+        backup_message_id = new_msg.message_id
+        logging.info("Created new threads backup with file")
+        
+        if old_backup_message_id:
             try:
-                msg = await app_instance.bot.send_document(
-                    chat_id=GROUP_ID,
-                    document=file_data,
-                    caption="🔄 BACKUP_THREADS: User threads backup",
-                    message_thread_id=1  # General topic
-                )
-                # Delete old backup message
                 await app_instance.bot.delete_message(
                     chat_id=GROUP_ID,
-                    message_id=backup_message_id
+                    message_id=old_backup_message_id
                 )
-                backup_message_id = msg.message_id
-                logging.info("Updated threads backup with new file")
+                logging.info("Deleted old backup message")
             except Exception as e:
-                logging.warning(f"Failed to update backup message: {e}")
-                # If update fails, create new message
-                backup_message_id = None
-        
-        if not backup_message_id:
-            # Create new backup message
-            msg = await app_instance.bot.send_document(
-                chat_id=GROUP_ID,
-                document=file_data,
-                caption="🔄 BACKUP_THREADS: User threads backup",
-                message_thread_id=1  # General topic
-            )
-            backup_message_id = msg.message_id
-            logging.info("Created new threads backup with file")
-            
+                logging.warning(f"Failed to delete old backup message: {e}")
+                
     except Exception as e:
         logging.error(f"Failed to save threads backup: {e}")
 
@@ -215,6 +207,7 @@ async def forward_to_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 sticker=update.message.sticker.file_id,
                 message_thread_id=thread_id
             )
+        logging.info(f"Forwarded message from user {user_id} to thread {thread_id}")
     except Exception as e:
         logging.error(f"Failed to forward message from user {user_id}: {e}")
 
@@ -260,9 +253,9 @@ async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ הגיבוי נשמר בהצלחה!")
 
 async def periodic_backup():
-    """Backup threads every 10 minutes"""
+    """Backup threads every 30 minutes"""
     while True:
-        await asyncio.sleep(600)  # 10 minutes
+        await asyncio.sleep(1800)  # 30 minutes
         if user_threads:  # Only backup if there's data
             await save_threads_to_group()
             logging.info("Periodic backup completed")
@@ -284,8 +277,8 @@ def main():
     
     async def run_bot():
         try:
-            # Create application
-            app = Application.builder().token(TOKEN).build()
+            # Create application with RateLimiter
+            app = Application.builder().token(TOKEN).rate_limiter(RateLimiter()).build()
             app_instance = app
 
             # Initialize the application
