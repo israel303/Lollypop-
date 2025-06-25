@@ -262,6 +262,7 @@ def main():
     logger = logging.getLogger(__name__)
     
     async def run_bot():
+        app = None
         try:
             app = Application.builder().token(TOKEN).build()
             app_instance = app
@@ -303,7 +304,7 @@ def main():
             logger.error(f"Failed to start application: {e}")
             raise
         finally:
-            if app.updater is not None:
+            if app and app.updater is not None:
                 await app.stop()
                 await app.shutdown()
             
