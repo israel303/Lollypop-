@@ -37,10 +37,12 @@ async def load_threads_from_group(bot):
     global user_threads, backup_message_id
     
     try:
+        # Delete existing webhook to allow getUpdates
+        await bot.delete_webhook(drop_pending_updates=True)
+        logging.info("Deleted existing webhook to allow getUpdates")
+
         # Search for backup messages in general topic (message_thread_id = 1)
-        # We'll check recent messages for our backup
         try:
-            # Try to get recent messages from the group
             updates = await bot.get_updates(limit=100)
             backup_found = False
             
@@ -67,6 +69,10 @@ async def load_threads_from_group(bot):
         except Exception as inner_e:
             logging.warning(f"Could not load from updates: {inner_e}")
             user_threads = {}
+            
+        # Re-set the webhook after loading updates
+        await bot.set_webhook(url=WEBHOOK_URL + "/webhook")
+        logging.info("Webhook re-set after loading updates")
             
     except Exception as e:
         logging.error(f"Failed to load threads backup: {e}")
@@ -277,7 +283,7 @@ def main():
 
             # Load threads from backup
             await load_threads_from_group(app.bot)
-            
+
             # Add handlers
             app.add_handler(CommandHandler("start", start))
             app.add_handler(CommandHandler("backup", backup_command))
@@ -296,28 +302,26 @@ def main():
             # Start periodic backup task
             asyncio.create_task(periodic_backup())
 
-            # Set webhook
-            await app.bot.set_webhook(url=WEBHOOK_URL + "/webhook")
+            # Ensure webhook is set correctly
+            await app.bot.delete_webhook(drop_pending_updates=True)
+            await app.bot.setWebhook(url=WEBHOOK_URL + "/webhook")
             
-            # Start webhook server
-            logger.info(f"Starting bot with webhook: {WEBHOOK_URL}/webhook")
+            # Start the application with webhook
+            logger.info(f"Starting webhook: {WEBHOOK_URL}/webhook")
             logger.info(f"Listening on port: {PORT}")
             
-            await app.start()
-            await app.updater.start_webhook(
+            await app.run_webhooks(
                 listen="0.0.0.0",
                 port=PORT,
-                webhook_url=WEBHOOK_URL + "/webhook"
+                webhook_url=WEBHOOK_URL + "/webhook",
+                drop_pending_updates=True
             )
             
-            # Keep the bot running
-            await app.updater.idle()
-            
         except Exception as e:
-            logging.error(f"Failed to start bot: {e}")
+            logger.error(f"Failed to start application: {e}")
             raise
-    
-    # Run the async function
+            
+    # Run the application
     asyncio.run(run_bot())
 
 if __name__ == "__main__":
