@@ -32,7 +32,7 @@ user_threads = {}
 backup_message_id = None
 app_instance = None
 
-async def load_threads_from_group():
+async def load_threads_from_group(bot):
     """Load threads data from backup message in group"""
     global user_threads, backup_message_id
     
@@ -41,7 +41,7 @@ async def load_threads_from_group():
         # We'll check recent messages for our backup
         try:
             # Try to get recent messages from the group
-            updates = await app_instance.bot.get_updates(limit=100)
+            updates = await bot.get_updates(limit=100)
             backup_found = False
             
             for update in reversed(updates):  # Check from oldest to newest
