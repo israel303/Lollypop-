@@ -37,28 +37,35 @@ async def load_threads_from_group():
     global user_threads, backup_message_id
     
     try:
-        # Get the general topic messages (topic_id = 1 is usually general)
-        messages = []
-        async for message in app_instance.bot.get_chat_history(GROUP_ID, limit=50):
-            if (message.message_thread_id == 1 and 
-                message.text and 
-                message.text.startswith("🔄 BACKUP_THREADS:")):
-                messages.append(message)
-        
-        if messages:
-            # Get the latest backup message
-            latest_message = messages[0]  # Most recent first
-            backup_message_id = latest_message.message_id
+        # Search for backup messages in general topic (message_thread_id = 1)
+        # We'll check recent messages for our backup
+        try:
+            # Try to get recent messages from the group
+            updates = await app_instance.bot.get_updates(limit=100)
+            backup_found = False
             
-            # Extract JSON from message
-            json_text = latest_message.text.replace("🔄 BACKUP_THREADS:", "").strip()
-            if json_text:
-                user_threads = json.loads(json_text)
-                logging.info(f"Loaded {len(user_threads)} threads from backup")
-            else:
+            for update in reversed(updates):  # Check from oldest to newest
+                if (hasattr(update, 'message') and update.message and
+                    update.message.chat.id == GROUP_ID and
+                    update.message.message_thread_id == 1 and
+                    update.message.text and
+                    update.message.text.startswith("🔄 BACKUP_THREADS:")):
+                    
+                    backup_message_id = update.message.message_id
+                    json_text = update.message.text.replace("🔄 BACKUP_THREADS:", "").strip()
+                    
+                    if json_text:
+                        user_threads = json.loads(json_text)
+                        logging.info(f"Loaded {len(user_threads)} threads from backup")
+                        backup_found = True
+                        break
+            
+            if not backup_found:
+                logging.info("No backup found in recent updates, starting fresh")
                 user_threads = {}
-        else:
-            logging.info("No backup found, starting fresh")
+                
+        except Exception as inner_e:
+            logging.warning(f"Could not load from updates: {inner_e}")
             user_threads = {}
             
     except Exception as e:
@@ -259,48 +266,56 @@ def main():
     )
     logger = logging.getLogger(__name__)
     
-    try:
-        # Create application
-        app = Application.builder().token(TOKEN).build()
-        app_instance = app
+    async def run_bot():
+        try:
+            # Create application
+            app = Application.builder().token(TOKEN).build()
+            app_instance = app
 
-        # Add handlers
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(CommandHandler("backup", backup_command))
-        app.add_handler(MessageHandler(
-            filters.ALL & filters.ChatType.PRIVATE, 
-            forward_to_group
-        ))
-        app.add_handler(MessageHandler(
-            filters.ALL & filters.Chat(GROUP_ID), 
-            handle_group_reply
-        ))
-        
-        # Add error handler
-        app.add_error_handler(error_handler)
-
-        # Load threads from backup before starting
-        async def post_init(application):
+            # Load threads from backup
             await load_threads_from_group()
+            
+            # Add handlers
+            app.add_handler(CommandHandler("start", start))
+            app.add_handler(CommandHandler("backup", backup_command))
+            app.add_handler(MessageHandler(
+                filters.ALL & filters.ChatType.PRIVATE, 
+                forward_to_group
+            ))
+            app.add_handler(MessageHandler(
+                filters.ALL & filters.Chat(GROUP_ID), 
+                handle_group_reply
+            ))
+            
+            # Add error handler
+            app.add_error_handler(error_handler)
+
             # Start periodic backup task
             asyncio.create_task(periodic_backup())
-            
-        app.post_init = post_init
 
-        # Start webhook (Render compatible)
-        logger.info(f"Starting bot with webhook: {WEBHOOK_URL}/webhook")
-        logger.info(f"Listening on port: {PORT}")
-        
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            webhook_url=WEBHOOK_URL + "/webhook",
-            url_path="/webhook"
-        )
-        
-    except Exception as e:
-        logging.error(f"Failed to start bot: {e}")
-        raise
+            # Set webhook
+            await app.bot.set_webhook(url=WEBHOOK_URL + "/webhook")
+            
+            # Start webhook server
+            logger.info(f"Starting bot with webhook: {WEBHOOK_URL}/webhook")
+            logger.info(f"Listening on port: {PORT}")
+            
+            await app.start()
+            await app.updater.start_webhook(
+                listen="0.0.0.0",
+                port=PORT,
+                webhook_path="/webhook"
+            )
+            
+            # Keep the bot running
+            await app.updater.idle()
+            
+        except Exception as e:
+            logging.error(f"Failed to start bot: {e}")
+            raise
+    
+    # Run the async function
+    asyncio.run(run_bot())
 
 if __name__ == "__main__":
     main()
