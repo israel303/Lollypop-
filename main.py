@@ -1,4 +1,3 @@
-
 import os
 import logging
 import json
@@ -37,9 +36,11 @@ async def open_thread_for_user(app: Application, user) -> int:
 
     msg = await app.bot.send_message(
         chat_id=GROUP_ID,
-        text=f"📬 פנייה חדשה מ- {name}
-🆔 ID: {user_id}
-🧑‍💻 שם משתמש: {username}",
+        text=(
+            f"📬 פנייה חדשה מ- {name}\n"
+            f"🆔 ID: {user_id}\n"
+            f"🧑‍💻 שם משתמש: {username}"
+        ),
         message_thread_id=None
     )
     return msg.message_thread_id
@@ -54,16 +55,32 @@ async def forward_to_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_threads[user_id] = thread_id
 
     if update.message.text:
-        await context.bot.send_message(GROUP_ID, update.message.text, message_thread_id=thread_id)
+        await context.bot.send_message(
+            chat_id=GROUP_ID,
+            text=update.message.text,
+            message_thread_id=thread_id
+        )
     elif update.message.photo:
-        await context.bot.send_photo(GROUP_ID, update.message.photo[-1].file_id,
-                                     caption=update.message.caption or "", message_thread_id=thread_id)
+        await context.bot.send_photo(
+            chat_id=GROUP_ID,
+            photo=update.message.photo[-1].file_id,
+            caption=update.message.caption or "",
+            message_thread_id=thread_id
+        )
     elif update.message.document:
-        await context.bot.send_document(GROUP_ID, update.message.document.file_id,
-                                        caption=update.message.caption or "", message_thread_id=thread_id)
+        await context.bot.send_document(
+            chat_id=GROUP_ID,
+            document=update.message.document.file_id,
+            caption=update.message.caption or "",
+            message_thread_id=thread_id
+        )
     elif update.message.video:
-        await context.bot.send_video(GROUP_ID, update.message.video.file_id,
-                                     caption=update.message.caption or "", message_thread_id=thread_id)
+        await context.bot.send_video(
+            chat_id=GROUP_ID,
+            video=update.message.video.file_id,
+            caption=update.message.caption or "",
+            message_thread_id=thread_id
+        )
 
 async def handle_group_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.is_topic_message:
